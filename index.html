@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CYBER DEFENSE: 高清雙語版</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif; touch-action: none; }
+        
+        /* 黑白劇烈抖動特效 */
+        @keyframes bw-horror {
+            0% { transform: translate(3px, -3px); filter: invert(0); background: #000; color: #fff; }
+            33% { transform: translate(-3px, 3px); filter: invert(1); background: #fff; color: #000; }
+            66% { transform: translate(5px, 2px); }
+            100% { transform: translate(0); }
+        }
+        .bw-glitch { animation: bw-horror 0.07s infinite; font-weight: 900; }
+
+        #ui-layer { 
+            position: absolute; top: 20px; left: 20px; color: #0f0; 
+            font-size: 18px; z-index: 50; pointer-events: none; 
+            text-shadow: 2px 2px 4px #000; font-weight: bold;
+        }
+        
+        #overlay { position: absolute; inset: 0; background: #000; z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+        #intro-msg { color: #fff; font-size: 1.6rem; padding: 25px; min-height: 6rem; line-height: 2; white-space: pre-wrap; font-weight: bold; }
+        
+        .btn { 
+            background: #111; border: 3px solid #fff; color: #fff; padding: 15px 45px; 
+            font-size: 22px; cursor: pointer; margin-top: 25px; letter-spacing: 2px;
+            font-weight: bold; border-radius: 5px;
+        }
+        .btn:active { background: #333; }
+        #restartBtn { border-color: #f00; color: #f00; display: none; }
+
+        #jumpscare { 
+            position: fixed; inset: 0; z-index: 2000; background: #000; display: none; 
+            justify-content: center; align-items: center; font-size: 180px; flex-direction: column;
+        }
+    </style>
+</head>
+<body id="game-body">
+
+<div id="ui-layer">
+    <div style="color: #0f0;">系統完整性 INTEGRITY: <span id="health">❤️❤️❤️</span></div>
+    <div style="color: #ff0;">已清除威脅 PURGED: <span id="targets">0</span> / 15</div>
+</div>
+
+<div id="jumpscare">
+    <div>💀</div>
+    <div style="font-size: 40px; color: red; background: black; padding: 10px; border: 2px solid red;">系統崩潰 SYSTEM CRASH</div>
+</div>
+
+<div id="overlay">
+    <div id="intro-msg"></div>
+    <button class="btn" id="startBtn">啟動系統 INITIALIZE</button>
+    <button class="btn" id="restartBtn">重啟程序 REBOOT</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+    let scene, camera, renderer, clock;
+    let entities = [];
+    let state = { active: false, lives: 3, targets: 0, required: 15 };
+
+    const THREATS = [
+        { emoji: "👾", cn: "木馬病毒", en: "TROJAN" },
+        { emoji: "👿", cn: "勒索軟體", en: "RANSOMWARE" },
+        { emoji: "💣", cn: "流量攻擊", en: "DDoS" },
+        { emoji: "☠️", cn: "漏洞利用", en: "EXPLOIT" },
+        { emoji: "🕸️", cn: "釣魚連結", en: "PHISHING" }
+    ];
+    const DEFENSES = [
+        { emoji: "🛡️", cn: "防火牆", en: "FIREWALL" },
+        { emoji: "🔒", cn: "數據加密", en: "ENCRYPT" },
+        { emoji: "🩹", cn: "安全補丁", en: "PATCH" },
+        { emoji: "🔑", cn: "多重認證", en: "MFA" }
+    ];
+
+    const startBtn = document.getElementById('startBtn');
+    const introMsg = document.getElementById('intro-msg');
+    const overlay = document.getElementById('overlay');
+
+    startBtn.onclick = () => {
+        startBtn.style.display = 'none';
+        const text = "人們想起了被網絡安全支配的恐懼\nPeople recalled the fear of cyber security dominance";
+        let i = 0;
+        let timer = setInterval(() => {
+            introMsg.innerText += text[i++];
+            if (i >= text.length) {
+                clearInterval(timer);
+                introMsg.classList.add('bw-glitch');
+                overlay.classList.add('bw-glitch');
+                setTimeout(() => {
+                    overlay.style.display = 'none';
+                    overlay.classList.remove('bw-glitch');
+                    initGame();
+                }, 2500);
+            }
+        }, 100);
+    };
+
+    document.getElementById('restartBtn').onclick = () => location.reload();
+
+    function initGame() {
+        state.active = true;
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.08);
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.6, 5);
+        
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+        
+        scene.add(new THREE.GridHelper(100, 40, 0x440000, 0x111111));
+        clock = new THREE.Clock();
+
+        const handleInput = (x, y) => {
+            if (!state.active) return;
+            const mouse = new THREE.Vector2((x/window.innerWidth)*2-1, -(y/window.innerHeight)*2+1);
+            const ray = new THREE.Raycaster();
+            ray.setFromCamera(mouse, camera);
+            const hits = ray.intersectObjects(entities);
+            if (hits.length > 0) {
+                const target = hits[0].object;
+                if (target.userData.isThreat) state.targets++; else triggerJumpScare();
+                scene.remove(target);
+                entities = entities.filter(e => e !== target);
+                updateUI();
+            }
+        };
+
+        window.addEventListener('touchstart', (e) => handleInput(e.touches[0].clientX, e.touches[0].clientY));
+        window.addEventListener('mousedown', (e) => handleInput(e.clientX, e.clientY));
+        
+        animate();
+        spawnNPC();
+    }
+
+    function spawnNPC() {
+        if (!state.active) return;
+        const isThreat = Math.random() > 0.45;
+        const data = isThreat ? THREATS[Math.floor(Math.random()*THREATS.length)] : DEFENSES[Math.floor(Math.random()*DEFENSES.length)];
+
+        // 提高畫質：使用更大的畫布
+        const canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 300;
+        const ctx = canvas.getContext('2d');
+        
+        // 文字背板 (確保文字清晰)
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillRect(50, 120, 412, 160);
+        ctx.strokeStyle = isThreat ? "#ff0000" : "#00ff00";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(50, 120, 412, 160);
+
+        // 繪製 Emoji
+        ctx.font = '110px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(data.emoji, 256, 100);
+        
+        // 繪製中英文 (清晰加粗)
+        ctx.fillStyle = isThreat ? "#ff3333" : "#33ff33";
+        ctx.font = 'bold 44px "PingFang TC", sans-serif';
+        ctx.fillText(data.cn, 256, 185);
+        ctx.font = 'bold 36px "Courier New", monospace';
+        ctx.fillText(data.en, 256, 250);
+
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+        sprite.scale.set(4, 2.3, 1);
+        sprite.position.set((Math.random()-0.5)*16, 1.4, -60);
+        sprite.userData = { isThreat: isThreat };
+        
+        scene.add(sprite);
+        entities.push(sprite);
+        
+        setTimeout(spawnNPC, Math.max(700, 1800 - (state.targets * 30)));
+    }
+
+    function triggerJumpScare() {
+        state.lives--;
+        const j = document.getElementById('jumpscare');
+        j.style.display = 'flex';
+        document.getElementById('game-body').classList.add('bw-glitch');
+        setTimeout(() => { 
+            j.style.display = 'none'; 
+            document.getElementById('game-body').classList.remove('bw-glitch');
+        }, 600);
+        updateUI();
+    }
+
+    function updateUI() {
+        document.getElementById('health').innerText = '❤️'.repeat(Math.max(0, state.lives));
+        document.getElementById('targets').innerText = state.targets;
+        
+        if (state.lives <= 0 || state.targets >= state.required) {
+            state.active = false;
+            introMsg.innerText = state.lives <= 0 ? 
+                "⚠️ 系統已被入侵 ⚠️\nSYSTEM BREACHED" : 
+                "✅ 掃描任務完成 ✅\nTASK COMPLETED";
+            introMsg.classList.add('bw-glitch');
+            overlay.style.display = 'flex';
+            setTimeout(() => document.getElementById('restartBtn').style.display = 'block', 3000);
+        }
+    }
+
+    function animate() {
+        if (!state.active) return;
+        requestAnimationFrame(animate);
+        const d = clock.getDelta();
+        entities.forEach(e => {
+            e.position.z += (13 + (state.targets * 0.2)) * d; 
+            if (e.position.z > 6.5) {
+                if (e.userData.isThreat) triggerJumpScare(); 
+                scene.remove(e);
+                entities = entities.filter(i => i !== e);
+                updateUI();
+            }
+        });
+        renderer.render(scene, camera);
+    }
+</script>
+</body>
+</html>
